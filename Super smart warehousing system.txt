@@ -1,0 +1,136 @@
+代码
+
+import streamlit as st
+import pandas as pd
+import os
+import random
+import base64
+import plotly.express as px
+import streamlit.components.v1 as components
+import time
+
+# --- 1. 頁面基本配置 ---
+st.set_page_config(page_title="TC-Smart Link 智能中控 v2.2", layout="wide")
+
+# 初始化 Session State (數據持久化)
+if 'inventory_df' not in st.session_state:
+    # 初始默認數據
+    st.session_state.inventory_df = pd.DataFrame({
+        '產品名稱': ['高強度螺母', '外六角螺栓', '法蘭螺母', '平墊圈', '彈簧墊圈'],
+        '規格': ['M4', 'M5', 'M6', 'M8', 'M10'],
+        '庫存數量': [120000, 85000, 300000, 450000, 200000],
+        '單價': [0.05, 0.12, 0.08, 0.01, 0.03],
+        '最近狀態': ['入庫', '出庫', '入庫', '靜止', '出庫']
+    })
+
+if 'sys_status' not in st.session_state:
+    st.session_state.sys_status = "NORMAL"
+if 'last_response' not in st.session_state:
+    st.session_state.last_response = "實時更新系統已上線。表格編輯功能就緒。"
+
+# --- 2. 深度定制 CSS ---
+def inject_custom_css():
+    status_color = {"NORMAL": "#01FF70", "ANGRY": "#FF4136", "WORRY": "#FF851B", "WINK": "#7FDBFF"}.get(st.session_state.sys_status, "#01FF70")
+    st.markdown(f"""
+    <style>
+    [data-testid="stSidebar"] {{ background-color: #032360; color: white; }}
+    .smart-avatar {{ width: 140px; border-radius: 50%; border: 4px solid {status_color}; margin: 10px auto; display: block; }}
+    div.stButton > button:first-child {{ background-color: #FF851B; color: white; width: 100%; font-weight: bold; height: 3em; }}
+    .weather-box {{ background: rgba(255, 255, 255, 0.1); padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; border: 1px solid rgba(255,255,255,0.2); }}
+    .realtime-card {{ background: #032360; color: #01FF70; padding: 15px; border-radius: 10px; font-family: 'Courier New', Courier, monospace; border: 1px solid #01FF70; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 3. 功能組件 ---
+def get_avatar_html():
+    emotion_map = {"NORMAL": [0, 8], "WINK": [1, 5], "WORRY": [2, 6], "ANGRY": [4, 7]}
+    idx = random.choice(emotion_map.get(st.session_state.sys_status, [0]))
+    img_path = f"smart_{idx}.png"
+    if os.path.exists(img_path):
+        with open(img_path, "rb") as f:
+            data = base64.b64encode(f.read()).decode()
+        return f'<img src="data:image/png;base64,{data}" class="smart-avatar">'
+    return '<div style="text-align:center;">[ 專家 ]</div>'
+
+def text_to_speech_js(text):
+    safe_text = text.replace('"', ' ').replace('\n', ' ')
+    js_code = f"""<script>var msg = new SpeechSynthesisUtterance(); msg.text = "{safe_text}"; msg.lang = "zh-CN"; window.speechSynthesis.speak(msg);</script>"""
+    components.html(js_code, height=0)
+
+def ask_smart_brain(query, df):
+    try:
+        import ollama
+        context_data = df.to_string(index=False)
+        res = ollama.chat(model='deepseek-r1:1.5b', messages=[
+            {'role': 'system', 'content': '名為小聰。永年總部專家。回答簡短。'},
+            {'role': 'user', 'content': f"库存：{context_data}\n问：{query}"}
+        ])
+        return res['message']['content'].split("</think>")[-1].strip()
+    except: return "引擎连接异常。"
+
+# --- 4. 主程序 ---
+def main():
+    inject_custom_css()
+    
+    # --- 左侧侧边栏 ---
+    with st.sidebar:
+        # A. 天气置顶
+        st.markdown('<div class="weather-box">☀️ <b>永年总部天气</b><br>14°C / 多云 / 2级风</div>', unsafe_allow_html=True)
+        # B. 小聪
+        st.markdown(get_avatar_html(), unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align:center; font-size:0.85rem; padding:5px;'>{st.session_state.last_response}</div>", unsafe_allow_html=True)
+        text_to_speech_js(st.session_state.last_response)
+        st.divider()
+        # C. 提问
+        query = st.text_input("专家监控指令：", placeholder="输入分析需求...")
+        if st.button("提交分析"):
+            if query:
+                st.session_state.last_response = ask_smart_brain(query, st.session_state.inventory_df)
+                st.session_state.sys_status = "WINK"
+                st.rerun()
+
+    # --- 右侧主面板 ---
+    st.markdown("<h2 style='color:#032360;'>🛰️ TC-Smart Link 智能中控 v2.2</h2>", unsafe_allow_html=True)
+    
+    # 第一行：实时动态更新系统
+    st.markdown("### 📡 实时出入库动态流水")
+    log_placeholder = st.empty()
+    # 模拟实时流水（随机生成一条记录）
+    actions = ["入库", "出库", "调拨", "盘点"]
+    products = st.session_state.inventory_df['产品名称'].tolist()
+    random_log = f"[{time.strftime('%H:%M:%S')}] 探测到流水：{random.choice(products)} | 动作：{random.choice(actions)} | 数量：{random.randint(100, 5000)} PCS"
+    log_placeholder.markdown(f'<div class="realtime-card">{random_log}</div>', unsafe_allow_html=True)
+
+    # 第二行：统计图表（随数据变化）
+    st.markdown("### 📈 库存规模动态统计")
+    fig = px.bar(st.session_state.inventory_df, x='产品名称', y='库存数量', color='库存数量', color_continuous_scale='GnBu')
+    fig.update_layout(height=250, margin=dict(l=0, r=0, t=0, b=0))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 第三行：可编辑表格（核心功能）
+    st.markdown("### 📝 库存数据中心 (支持网页直接编辑/增减)")
+    st.info("💡 提示：你可以直接点击下方表格修改数值、右键增加行、或删除产品。修改后统计图表将自动更新。")
+    
+    # 使用 data_editor 实现编辑、添加、删除功能
+    edited_df = st.data_editor(
+        st.session_state.inventory_df,
+        num_rows="dynamic", # 允许动态添加/删除行
+        use_container_width=True,
+        key="inventory_editor"
+    )
+    
+    # 检查数据是否有变动，若有变动则同步
+    if not edited_df.equals(st.session_state.inventory_df):
+        st.session_state.inventory_df = edited_df
+        st.rerun()
+
+    # 第四行：快速汇总
+    c1, c2 = st.columns(2)
+    with c1:
+        st.metric("实时总资产", f"{(st.session_state.inventory_df['库存数量']*st.session_state.inventory_df['单价']).sum():,.2f} ¥")
+    with c2:
+        st.metric("监控产品种类", f"{len(st.session_state.inventory_df)} 种")
+
+if __name__ == "__main__":
+    main()
+    运行：streamlit run script.py
