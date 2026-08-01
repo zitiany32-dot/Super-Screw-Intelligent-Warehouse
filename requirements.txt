@@ -1,0 +1,8 @@
+# BoltMind 获客模块
+anthropic>=0.120.0      # Claude API（公司分析、开发信起草、回信分析）
+requests>=2.31.0        # 官网抓取
+streamlit>=1.30.0       # 审核后台 app.py
+openpyxl>=3.1.0         # 读 .xlsx 格式的海关数据导出（只读 CSV 的话可以不装）
+
+# 开发用
+pytest>=7.4.0
