@@ -251,6 +251,54 @@ def test_apollo_wired_into_build_providers(config):
     assert "apollo" in names
 
 
+def test_classify_mx_normal():
+    from customsradar.discover.verify import classify_mx
+
+    r = classify_mx([(20, "mx2.acme.com"), (10, "mx1.acme.com")])
+    assert r.ok and r.host == "mx1.acme.com"  # 取优先级最低（最优）的
+
+
+def test_classify_mx_null_mx_means_no_mail():
+    """RFC 7505 null MX（唯一 MX 是 '.'）表示该域名不收信，必须判为不可投递。"""
+    from customsradar.discover.verify import classify_mx
+
+    r = classify_mx([(0, "")])
+    assert r.ok is False
+    assert "null MX" in (r.note or "")
+
+
+def test_classify_mx_empty():
+    from customsradar.discover.verify import classify_mx
+
+    assert classify_mx([]).ok is False
+
+
+def test_null_mx_candidate_gets_killed_in_verification(config):
+    """null MX 域名下的候选邮箱应被校验标成 smtp_fail、排到最后。"""
+    from unittest.mock import patch
+
+    from customsradar.discover import DiscoveryContext, EmailCandidate
+    from customsradar.discover.verify import MXResult
+
+    config.verify_mx = True
+    config.verify_smtp = False
+    ctx = DiscoveryContext(company_name="Dead", domain="nomail.example")
+
+    class Prov:
+        name = "website"
+
+        def find(self, c):
+            return [EmailCandidate("info@nomail.example", "website", confidence=80)]
+
+    with patch(
+        "customsradar.discover.aggregate.resolve_mx",
+        return_value=MXResult(ok=False, note="null MX（RFC 7505），该域名不收信"),
+    ):
+        result = discover_emails(ctx, config, providers=[Prov()])
+    assert result.candidates[0].verified == "smtp_fail"
+    assert result.usable() is None  # 不可投递，不该拿来发信
+
+
 def test_broken_provider_does_not_crash_discovery(config):
     class BrokenProvider:
         name = "broken"
