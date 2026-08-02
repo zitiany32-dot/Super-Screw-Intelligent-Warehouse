@@ -106,8 +106,9 @@ python -m customsradar.cli import --path data/inbox/x.csv --map company_name=客
 | WHOIS | ✅ | 域名注册邮箱，隐私代理挡住就跳过 |
 | 搜索引擎 | 需 key | 走 SerpAPI / Bing / Brave **官方 API**，不爬结果页 |
 | Hunter.io | 需 key | B2B 找邮箱行业标配，直接给人名+职位+置信度。强烈建议配 |
+| Apollo.io | 需 key | 按域名找联系人+邮箱，可只要采购/供应链岗位 |
 
-加一个新来源（比如 Apollo、Snov.io、某个国内数据库）只要照着写一个 provider，其余不动。
+加一个新来源只要照着写一个 provider，其余不动 —— `discover/apollo_provider.py` 就是照 `hunter_provider.py` 抄的样例，接 Snov.io / Clearbit / 某个国内库改掉 URL 和字段映射即可。
 
 **校验分三档**，越往后越"暴力"也越有风险：语法 → MX 记录（默认开，安全）→ SMTP 探测（默认**关**）。
 

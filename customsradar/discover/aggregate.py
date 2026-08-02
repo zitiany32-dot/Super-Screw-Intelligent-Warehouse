@@ -29,7 +29,9 @@ _VERIFY_BONUS = {
 }
 # 邮箱类型加成：业务邮箱最想要
 _ROLE_BONUS = {"business": 12, "personal": 8, "generic": 0, "low": -18}
-_SOURCE_ORDER = {"hunter": 0, "website": 1, "whois": 2, "search": 3, "pattern": 4}
+_SOURCE_ORDER = {
+    "hunter": 0, "apollo": 0, "website": 1, "whois": 2, "search": 3, "pattern": 4,
+}
 
 
 @dataclass
@@ -62,6 +64,10 @@ def build_providers(config: Config) -> list[EmailProvider]:
         from .hunter_provider import HunterProvider
 
         providers.append(HunterProvider(config.hunter_api_key, config.discover_timeout))
+    if config.apollo_api_key:
+        from .apollo_provider import ApolloProvider
+
+        providers.append(ApolloProvider(config.apollo_api_key, config.discover_timeout))
     if config.search_api_key and config.search_engine:
         from .search_provider import SearchProvider
 

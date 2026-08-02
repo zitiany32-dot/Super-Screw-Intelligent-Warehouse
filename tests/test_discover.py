@@ -151,6 +151,106 @@ def test_discover_emails_with_fake_provider(config):
     assert result.usable() is not None
 
 
+class _FakeResponse:
+    def __init__(self, payload, status=200):
+        self._payload = payload
+        self.status_code = status
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+
+            raise requests.HTTPError(f"status {self.status_code}")
+
+
+class _FakeSession:
+    """记录请求、返回预置响应，替掉真正的 requests.Session。"""
+
+    def __init__(self, payload, status=200):
+        self.payload = payload
+        self.status = status
+        self.calls = []
+
+    def post(self, url, json=None, headers=None, timeout=None):
+        self.calls.append({"url": url, "json": json, "headers": headers})
+        return _FakeResponse(self.payload, self.status)
+
+
+_APOLLO_PAYLOAD = {
+    "people": [
+        {
+            "name": "Jane Doe", "first_name": "Jane", "last_name": "Doe",
+            "title": "Purchasing Manager", "email": "jane.doe@acme.example.com",
+            "email_status": "verified",
+        },
+        {
+            "name": "Locked Person", "title": "Buyer",
+            "email": "email_not_unlocked@domain.com", "email_status": "verified",
+        },
+        {
+            "name": "Guess Guy", "title": "Sourcing",
+            "email": "g.guy@acme.example.com", "email_status": "guessed",
+        },
+        {
+            "name": "Third Party", "title": "Consultant",
+            "email": "someone@gmail.example.com", "email_status": "verified",
+        },
+    ]
+}
+
+
+def test_apollo_provider_maps_people_to_candidates():
+    from customsradar.discover.apollo_provider import ApolloProvider
+
+    session = _FakeSession(_APOLLO_PAYLOAD)
+    provider = ApolloProvider("fake-key", session=session)
+    ctx = Ctx(company_name="Acme", domain="acme.example.com")
+    cands = list(provider.find(ctx))
+    emails = {c.email: c for c in cands}
+
+    # 验证过的真实邮箱进来了，置信度高、标了 smtp_ok
+    assert "jane.doe@acme.example.com" in emails
+    assert emails["jane.doe@acme.example.com"].verified == "smtp_ok"
+    assert emails["jane.doe@acme.example.com"].person_title == "Purchasing Manager"
+    # 猜测的进来但置信度低
+    assert "g.guy@acme.example.com" in emails
+    assert emails["g.guy@acme.example.com"].confidence < 55
+    # 锁住的占位邮箱被跳过
+    assert not any("email_not_unlocked" in e for e in emails)
+    # 非本域名的第三方邮箱被跳过
+    assert "someone@gmail.example.com" not in emails
+    # 鉴权头带上了
+    assert session.calls[0]["headers"]["X-Api-Key"] == "fake-key"
+
+
+def test_apollo_provider_skips_without_key_or_domain():
+    from customsradar.discover.apollo_provider import ApolloProvider
+
+    provider = ApolloProvider("", session=_FakeSession(_APOLLO_PAYLOAD))
+    assert list(provider.find(Ctx(company_name="Acme", domain="acme.example.com"))) == []
+
+    provider2 = ApolloProvider("k", session=_FakeSession(_APOLLO_PAYLOAD))
+    assert list(provider2.find(Ctx(company_name="Acme", domain=None))) == []
+
+
+def test_apollo_provider_survives_error_response():
+    from customsradar.discover.apollo_provider import ApolloProvider
+
+    provider = ApolloProvider("k", session=_FakeSession({}, status=500))
+    assert list(provider.find(Ctx(company_name="Acme", domain="acme.example.com"))) == []
+
+
+def test_apollo_wired_into_build_providers(config):
+    from customsradar.discover.aggregate import build_providers
+
+    config.apollo_api_key = "fake-key"
+    names = {getattr(p, "name", "?") for p in build_providers(config)}
+    assert "apollo" in names
+
+
 def test_broken_provider_does_not_crash_discovery(config):
     class BrokenProvider:
         name = "broken"

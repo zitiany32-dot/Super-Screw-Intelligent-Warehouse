@@ -144,6 +144,7 @@ class Config:
     # 免费来源（官网、按人名生成模式）始终开。下面这些要 key 或开关才启用。
     discover_whois: bool = True          # 系统有 whois 命令就用，没有自动跳过
     hunter_api_key: str = ""             # Hunter.io，B2B 找邮箱行业标配
+    apollo_api_key: str = ""             # Apollo.io，按域名找联系人+邮箱
     search_engine: str = ""              # serpapi / bing / brave
     search_api_key: str = ""
     discover_timeout: int = 12
@@ -205,6 +206,7 @@ class Config:
             respect_robots=_env_bool("RADAR_RESPECT_ROBOTS", True),
             discover_whois=_env_bool("DISCOVER_WHOIS", True),
             hunter_api_key=os.environ.get("HUNTER_API_KEY", ""),
+            apollo_api_key=os.environ.get("APOLLO_API_KEY", ""),
             search_engine=os.environ.get("SEARCH_ENGINE", ""),
             search_api_key=os.environ.get("SEARCH_API_KEY", ""),
             discover_timeout=_env_int("DISCOVER_TIMEOUT", defaults.discover_timeout),
