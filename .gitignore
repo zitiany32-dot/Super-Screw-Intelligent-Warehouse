@@ -1,0 +1,23 @@
+# 密钥
+.env
+
+# 数据（海关数据、抓取内容、数据库、草稿、简报都不进仓库）
+data/
+*.db
+*.db-wal
+*.db-shm
+*.eml
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# 日志
+*.log
+
+# 系统
+.DS_Store
