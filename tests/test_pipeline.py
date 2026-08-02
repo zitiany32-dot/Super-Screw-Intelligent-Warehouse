@@ -4,10 +4,10 @@ from datetime import date
 
 from conftest import FakeCrawler, FakeLLM
 
-from boltmind import store
-from boltmind.ai.client import BudgetExceeded
-from boltmind.enrich.website import CrawlResult
-from boltmind.pipeline import (
+from customsradar import store
+from customsradar.ai.client import BudgetExceeded
+from customsradar.enrich.website import CrawlResult
+from customsradar.pipeline import (
     RunStats,
     ingest,
     pick_best_email,
@@ -15,7 +15,7 @@ from boltmind.pipeline import (
     run_night,
     select_candidates,
 )
-from boltmind.sources.demo import DemoCustomsSource
+from customsradar.sources.demo import DemoCustomsSource
 
 TODAY = date(2026, 8, 1)
 
@@ -33,7 +33,7 @@ def test_ingest_dedupes_companies_and_records(conn):
 
 
 def test_ingest_survives_a_bad_lead(conn):
-    from boltmind.sources.base import CustomsLead
+    from customsradar.sources.base import CustomsLead
 
     stats = ingest(
         conn,
@@ -74,25 +74,55 @@ def test_pick_best_email_returns_none_for_garbage():
     assert pick_best_email([], None) is None
 
 
-def test_resolve_recipient_rejects_invented_email():
-    """模型推荐的邮箱如果不在已知邮箱里，一律不采信 —— 防止发信到编出来的地址。"""
-    analysis = {"recommended_contact": "ceo@totally-made-up.example.com"}
-    company = {"contact_email": None, "domain": "acme.example.com"}
-    enrichment = {"emails": ["info@acme.example.com"]}
-    assert resolve_recipient(analysis, company, enrichment) == "info@acme.example.com"
+def _candidate(email, source="website", confidence=80, verified="mx"):
+    from customsradar.discover import EmailCandidate
 
-
-def test_resolve_recipient_accepts_known_email():
-    analysis = {"recommended_contact": "sales@acme.example.com"}
-    enrichment = {"emails": ["sales@acme.example.com", "hr@acme.example.com"]}
-    assert (
-        resolve_recipient(analysis, {"domain": "acme.example.com"}, enrichment)
-        == "sales@acme.example.com"
+    return EmailCandidate(
+        email=email, source=source, confidence=confidence, verified=verified
     )
 
 
-def test_resolve_recipient_none_when_nothing_known():
-    assert resolve_recipient({"recommended_contact": "unknown"}, {}, None) is None
+def test_resolve_recipient_rejects_invented_email():
+    """模型推荐的邮箱如果不在候选集里，一律不采信 —— 防止发信到编出来的地址。"""
+    from customsradar.discover import DiscoveryResult
+
+    analysis = {"recommended_contact": "ceo@totally-made-up.example.com"}
+    discovery = DiscoveryResult(candidates=[_candidate("info@acme.example.com")])
+    email, hint = resolve_recipient(analysis, {"domain": "acme.example.com"}, None, discovery)
+    assert email == "info@acme.example.com"
+
+
+def test_resolve_recipient_accepts_recommended_when_in_candidates():
+    from customsradar.discover import DiscoveryResult
+
+    analysis = {"recommended_contact": "sales@acme.example.com"}
+    discovery = DiscoveryResult(
+        candidates=[
+            _candidate("info@acme.example.com", confidence=70),
+            _candidate("sales@acme.example.com", confidence=65),
+        ]
+    )
+    email, _ = resolve_recipient(analysis, {"domain": "acme.example.com"}, None, discovery)
+    assert email == "sales@acme.example.com"
+
+
+def test_resolve_recipient_flags_pattern_guess():
+    from customsradar.discover import DiscoveryResult
+
+    discovery = DiscoveryResult(
+        candidates=[_candidate("j.smith@acme.example.com", source="pattern",
+                               confidence=40, verified="mx")]
+    )
+    email, hint = resolve_recipient({}, {"domain": "acme.example.com"}, None, discovery)
+    assert email == "j.smith@acme.example.com"
+    assert hint and "核实" in hint
+
+
+def test_resolve_recipient_none_when_nothing_found():
+    from customsradar.discover import DiscoveryResult
+
+    email, hint = resolve_recipient({}, {}, None, DiscoveryResult(candidates=[]))
+    assert email is None
 
 
 def test_run_night_end_to_end_stops_before_sending(conn, config, fake_llm):
@@ -139,7 +169,7 @@ def test_run_night_skips_draft_for_low_priority(conn, config, fake_analysis, fak
 
 def test_high_priority_is_downgraded_when_prescore_is_low(conn, config, fake_analysis, fake_email):
     """模型说 high 但规则分很低时下调 —— 防止模型把垃圾线索抬上去。"""
-    from boltmind.sources.base import CustomsLead
+    from customsradar.sources.base import CustomsLead
 
     llm = FakeLLM({"analyze:": fake_analysis, "draft:": fake_email})
     ingest(conn, [CustomsLead(company_name="Mystery Trading", product_desc="TEXTILES")])

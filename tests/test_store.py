@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from boltmind import store
+from customsradar import store
 
 
 def test_normalize_strips_legal_suffixes():

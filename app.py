@@ -1,22 +1,22 @@
-"""BoltMind 获客后台 —— 早上打开这个页面，30 分钟审完，亲手点发送。
+"""CustomsRadar 获客后台 —— 早上打开这个页面，30 分钟审完，亲手点发送。
 
     streamlit run app.py
 
 页面本身不会自动发任何邮件：只有你点「确认发送」那一下才会真的走 SMTP，
-而且要求草稿已经过审、配置里 BOLTMIND_ALLOW_SEND 已打开。
+而且要求草稿已经过审、配置里 RADAR_ALLOW_SEND 已打开。
 """
 
 from __future__ import annotations
 
 import streamlit as st
 
-from boltmind import brief as brief_mod
-from boltmind import inbox as inbox_mod
-from boltmind import mailer, store
-from boltmind.config import Config
-from boltmind.db import init_db
+from customsradar import brief as brief_mod
+from customsradar import inbox as inbox_mod
+from customsradar import mailer, store
+from customsradar.config import Config
+from customsradar.db import init_db
 
-st.set_page_config(page_title="BoltMind 获客后台", layout="wide", page_icon="🧲")
+st.set_page_config(page_title="CustomsRadar 获客后台", layout="wide", page_icon="🧲")
 
 PRIMARY = "#032360"
 ACCENT = "#FF851B"
@@ -62,7 +62,7 @@ config = get_config()
 # 侧边栏
 # --------------------------------------------------------------------------- #
 with st.sidebar:
-    st.markdown("## 🧲 BoltMind")
+    st.markdown("## 🧲 CustomsRadar")
     st.caption("获客模块 · 人工扣扳机")
 
     conn = get_conn(config)
@@ -82,13 +82,13 @@ with st.sidebar:
     if config.allow_send:
         st.success("发送开关：已打开")
     else:
-        st.warning("发送开关：关闭\n\n只能导出 .eml 手动发。要在后台直发，把 BOLTMIND_ALLOW_SEND=true 写进 .env。")
+        st.warning("发送开关：关闭\n\n只能导出 .eml 手动发。要在后台直发，把 RADAR_ALLOW_SEND=true 写进 .env。")
     if run:
         st.caption(f"最近跑批 #{run['id']} · {run['status']} · ${run.get('cost_usd') or 0:.2f}")
 
     st.divider()
     st.caption("跑批请用命令行 / 定时任务：")
-    st.code("python -m boltmind.cli run-night", language="bash")
+    st.code("python -m customsradar.cli run-night", language="bash")
 
 
 tab_brief, tab_drafts, tab_replies, tab_leads = st.tabs(
@@ -108,7 +108,7 @@ with tab_brief:
 
     run = data["run"]
     if run is None:
-        st.info("还没有跑批记录。先执行 `python -m boltmind.cli run-night --demo` 试跑一次。")
+        st.info("还没有跑批记录。先执行 `python -m customsradar.cli run-night --demo` 试跑一次。")
     else:
         stats = run.get("stats") or {}
         high = [i for i in data["items"] if i["priority"] == "high"]
@@ -159,11 +159,53 @@ with tab_brief:
                             f"采购特征 {profile.get('buying_pattern') or '?'} · "
                             f"建议联系 {profile.get('decision_maker_guess') or '?'}"
                         )
+                    assessment = item.get("assessment") or {}
+                    if any(
+                        assessment.get(k)
+                        for k in ("strengths", "weaknesses", "opportunities", "threats")
+                    ):
+                        cc = st.columns(2)
+                        with cc[0]:
+                            if assessment.get("strengths"):
+                                st.markdown("**✅ 优势**")
+                                for v in assessment["strengths"]:
+                                    st.markdown(f"- {v}")
+                            if assessment.get("opportunities"):
+                                st.markdown("**🎯 机会**")
+                                for v in assessment["opportunities"]:
+                                    st.markdown(f"- {v}")
+                        with cc[1]:
+                            if assessment.get("weaknesses"):
+                                st.markdown("**⚠️ 劣势**")
+                                for v in assessment["weaknesses"]:
+                                    st.markdown(f"- {v}")
+                            if assessment.get("threats"):
+                                st.markdown("**🚩 风险**")
+                                for v in assessment["threats"]:
+                                    st.markdown(f"- {v}")
+                        if assessment.get("fit_verdict"):
+                            st.info(f"📌 {assessment['fit_verdict']}")
                     for i, angle in enumerate(item.get("angles") or [], 1):
                         st.markdown(
                             f"**切入点 {i}：** {angle.get('angle')}  \n"
                             f"<span class='pill'>依据</span>{angle.get('evidence')}",
                             unsafe_allow_html=True,
+                        )
+                    if item.get("emails"):
+                        st.markdown("**找到的邮箱**（按可信度）：")
+                        st.dataframe(
+                            [
+                                {
+                                    "邮箱": c["email"],
+                                    "来源": c.get("source"),
+                                    "校验": c.get("verified"),
+                                    "可信度": c.get("confidence"),
+                                    "联系人": c.get("person_name") or "",
+                                }
+                                for c in item["emails"][:8]
+                            ],
+                            use_container_width=True,
+                            hide_index=True,
                         )
                     if item.get("risks"):
                         st.warning(f"风险：{item['risks']}")
@@ -283,7 +325,7 @@ with tab_drafts:
                 help=(
                     "先点「保存并通过审核」"
                     if draft["status"] != "approved"
-                    else ("BOLTMIND_ALLOW_SEND 未打开" if not config.allow_send else "")
+                    else ("RADAR_ALLOW_SEND 未打开" if not config.allow_send else "")
                 ),
             ):
                 conn = get_conn(config)

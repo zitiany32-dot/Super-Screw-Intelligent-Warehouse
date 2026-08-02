@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from conftest import FakeLLM
 
-from boltmind import inbox, store
+from customsradar import inbox, store
 
 RAW_REPLY = b"""\
 From: Buyer Name <buyer@acme.example.com>

@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from boltmind.sources.csv_source import (
+from customsradar.sources.csv_source import (
     CsvCustomsSource,
     build_mapping,
     extract_domain,
     normalize_date,
     parse_number,
 )
-from boltmind.sources.demo import DemoCustomsSource
+from customsradar.sources.demo import DemoCustomsSource
 
 
 def test_build_mapping_matches_english_and_chinese_headers():

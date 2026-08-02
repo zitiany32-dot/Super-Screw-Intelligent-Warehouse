@@ -19,16 +19,16 @@ else
     PYTHON="$(command -v python3)"
 fi
 
-LOG_DIR="${BOLTMIND_DATA_DIR:-$REPO_DIR/data}/logs"
+LOG_DIR="${RADAR_DATA_DIR:-$REPO_DIR/data}/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/night-$(date +%Y%m%d).log"
 
 {
     echo "===== $(date '+%F %T') 开始跑批 ====="
-    "$PYTHON" -m boltmind.cli run-night "$@"
+    "$PYTHON" -m customsradar.cli run-night "$@"
     echo "----- 拉取回复 -----"
     # 没配 IMAP 时这一步会失败，不影响主流程
-    "$PYTHON" -m boltmind.cli poll-replies || echo "（跳过收信：未配置 IMAP 或收信失败）"
+    "$PYTHON" -m customsradar.cli poll-replies || echo "（跳过收信：未配置 IMAP 或收信失败）"
     echo "===== $(date '+%F %T') 结束 ====="
 } 2>&1 | tee -a "$LOG_FILE"
 

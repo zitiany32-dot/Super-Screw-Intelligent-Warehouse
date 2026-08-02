@@ -1,4 +1,4 @@
-"""命令行入口：`python -m boltmind.cli <子命令>`。
+"""命令行入口：`python -m customsradar.cli <子命令>`。
 
 夜间跑批用 run-night，早上看 brief，审核发送用 approve / send。
 """
@@ -136,6 +136,9 @@ def cmd_show(args: argparse.Namespace, config: Config) -> int:
             if draft.get("analysis_id")
             else None
         )
+        candidates = (
+            store.get_email_candidates(conn, company["id"]) if company else []
+        )
 
     print(f"=== 草稿 #{draft['id']} ({draft['status']}) ===")
     print(f"公司: {company['name'] if company else '?'} · {company.get('country') if company else ''}")
@@ -144,8 +147,26 @@ def cmd_show(args: argparse.Namespace, config: Config) -> int:
     if analysis:
         print(f"优先级: {analysis['priority']} · 评分 {analysis['score']}/100")
         print(f"理由: {analysis.get('reasons')}")
+        assessment = analysis.get("assessment") or {}
+        for label, key in (
+            ("优势", "strengths"), ("劣势", "weaknesses"),
+            ("机会", "opportunities"), ("风险", "threats"),
+        ):
+            values = assessment.get(key) or []
+            if values:
+                print(f"{label}: " + "；".join(str(v) for v in values))
+        if assessment.get("fit_verdict"):
+            print(f"匹配结论: {assessment['fit_verdict']}")
         if analysis.get("risks"):
-            print(f"风险: {analysis['risks']}")
+            print(f"风险提示: {analysis['risks']}")
+    if candidates:
+        print("\n--- 找到的邮箱（按可信度）---")
+        for cand in candidates[:8]:
+            who = f" · {cand['person_name']}" if cand.get("person_name") else ""
+            print(
+                f"  {cand['email']:<38.38} {cand.get('source')}/{cand.get('verified')}"
+                f" · {cand.get('confidence')}{who}"
+            )
     print(f"\n主题: {draft.get('subject')}\n")
     print(draft.get("body") or "")
     if draft.get("rationale"):
@@ -244,8 +265,8 @@ def cmd_stats(args: argparse.Namespace, config: Config) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="boltmind",
-        description="BoltMind 获客模块：海关数据 → 调研 → AI 起草 → 人工审核 → 手动发送",
+        prog="customsradar",
+        description="CustomsRadar 获客模块：海关数据 → 调研 → AI 起草 → 人工审核 → 手动发送",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="打开调试日志")
     parser.add_argument("--env", type=Path, default=None, help="指定 .env 文件路径")

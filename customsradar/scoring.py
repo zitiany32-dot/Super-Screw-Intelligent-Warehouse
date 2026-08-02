@@ -19,14 +19,8 @@ PRODUCT_KEYWORDS = (
     "threaded", "din", "iso", "hex", "flange", "螺栓", "螺母", "螺钉", "垫圈", "紧固件",
 )
 
-# 我们已经在做、或容易做的市场；只做轻微加权，不当硬门槛
-PREFERRED_MARKETS = {
-    "united states", "usa", "us", "canada", "mexico", "brazil", "chile",
-    "argentina", "colombia", "peru", "germany", "netherlands", "belgium",
-    "france", "spain", "italy", "poland", "united kingdom", "uk", "finland",
-    "sweden", "turkey", "united arab emirates", "saudi arabia", "australia",
-    "vietnam", "thailand", "india", "indonesia", "malaysia", "south africa",
-}
+# 不做地域筛选：任何国家一视同仁（用户明确要求「国家没有要求」）。
+# 打分只看采购活跃度、金额、品类匹配、供应链和可触达性，跟买家在哪个国家无关。
 
 
 def _parse_date(value: Any) -> date | None:
@@ -123,12 +117,6 @@ def prescore(
         reasons.append("有官网，可做背景调研")
     else:
         reasons.append("没有官网信息，触达难度高")
-
-    # --- 市场偏好 ---
-    country = (company.get("country") or "").strip().lower()
-    if country in PREFERRED_MARKETS:
-        score += 4
-        reasons.append(f"目标市场（{company.get('country')}）在我们的出口范围内")
 
     return max(0, min(100, score)), reasons
 

@@ -1,8 +1,12 @@
-# BoltMind 获客模块
+# CustomsRadar 获客模块
 anthropic>=0.120.0      # Claude API（公司分析、开发信起草、回信分析）
-requests>=2.31.0        # 官网抓取
+requests>=2.31.0        # 官网抓取 + 搜索/Hunter API
 streamlit>=1.30.0       # 审核后台 app.py
 openpyxl>=3.1.0         # 读 .xlsx 格式的海关数据导出（只读 CSV 的话可以不装）
+
+# 邮箱发现的可选增强（不装也能跑，只是少几个来源/校验精度低一点）
+dnspython>=2.4.0        # 精确查 MX 记录（没有就退回 dig/nslookup 或域名解析）
+python-whois>=0.9.0     # WHOIS 查询（没有就用系统 whois 命令，再没有就跳过）
 
 # 开发用
 pytest>=7.4.0

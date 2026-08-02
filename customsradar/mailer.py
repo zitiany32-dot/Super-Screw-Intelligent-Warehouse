@@ -2,7 +2,7 @@
 
 设计上有三道闸，缺一封都发不出去：
   1. 草稿状态必须是 approved —— 而 approved 只能由人在后台点出来
-  2. 配置里 BOLTMIND_ALLOW_SEND 必须为 true
+  2. 配置里 RADAR_ALLOW_SEND 必须为 true
   3. send_draft() 必须显式传 confirm=True
 
 流水线代码不会、也不应该调用这里的任何发送函数。
@@ -108,7 +108,7 @@ def preflight(config: Config, draft: dict[str, Any]) -> list[str]:
     if placeholders:
         problems.append(f"正文里还有未填的占位符: {'; '.join(placeholders[:3])}")
     if not config.allow_send:
-        problems.append("BOLTMIND_ALLOW_SEND 未打开")
+        problems.append("RADAR_ALLOW_SEND 未打开")
     if not config.smtp_host:
         problems.append("没有配置 SMTP_HOST")
     if not config.smtp_from:

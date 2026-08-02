@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from boltmind.ai.client import (
+from customsradar.ai.client import (
     AIClient,
     BudgetExceeded,
     BudgetTracker,

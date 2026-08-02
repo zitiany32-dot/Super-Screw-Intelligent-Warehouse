@@ -14,10 +14,11 @@ from datetime import date
 from typing import Any, Iterable
 
 from . import store
-from .ai.analyze import analyze_company, draft_cold_email
+from .ai.analyze import analyze_company, draft_cold_email, real_people
 from .ai.client import AIClient, BudgetExceeded, BudgetTracker, ModelRefusal, StructuredLLM
 from .config import Config
 from .db import utcnow
+from .discover import DiscoveryContext, DiscoveryResult, discover_emails
 from .enrich.website import WebsiteCrawler
 from .scoring import prescore, priority_from_score
 from .sources.base import CustomsLead
@@ -40,6 +41,8 @@ class RunStats:
     high_priority: int = 0
     medium_priority: int = 0
     low_priority: int = 0
+    emails_found: int = 0
+    companies_with_email: int = 0
     skipped_no_contact: int = 0
     errors: list[str] = field(default_factory=list)
     budget_stopped: bool = False
@@ -58,6 +61,8 @@ class RunStats:
             "high_priority": self.high_priority,
             "medium_priority": self.medium_priority,
             "low_priority": self.low_priority,
+            "emails_found": self.emails_found,
+            "companies_with_email": self.companies_with_email,
             "skipped_no_contact": self.skipped_no_contact,
             "budget_stopped": self.budget_stopped,
             "cost_usd": round(self.cost_usd, 4),
@@ -196,23 +201,90 @@ def pick_best_email(emails: list[str], domain: str | None = None) -> str | None:
 
 
 # --------------------------------------------------------------------------- #
-# 第四步：AI 分析 + 起草
+# 第四步：多源邮箱发现
+# --------------------------------------------------------------------------- #
+
+DiscoverFn = Any  # (DiscoveryContext, Config) -> DiscoveryResult
+
+
+def discover_company_emails(
+    conn: sqlite3.Connection,
+    config: Config,
+    company: dict[str, Any],
+    enrichment: dict[str, Any] | None,
+    analysis: dict[str, Any],
+    stats: RunStats,
+    discover_fn: DiscoverFn | None = None,
+) -> DiscoveryResult:
+    """跑一遍多源邮箱发现，存候选、回填联系人。返回排好序的候选。"""
+    context = DiscoveryContext(
+        company_name=company.get("name") or "",
+        domain=company.get("domain"),
+        website=company.get("website"),
+        country=company.get("country"),
+        known_emails=list((enrichment or {}).get("emails") or []),
+        site_text=(enrichment or {}).get("text"),
+        people=real_people(analysis),
+    )
+    fn = discover_fn or discover_emails
+    try:
+        result = fn(context, config)
+    except Exception as exc:  # noqa: BLE001 — 发现环节挂了不该拖垮整家公司
+        logger.info("邮箱发现失败 %s: %s", company.get("name"), exc)
+        return DiscoveryResult(candidates=[])
+
+    if result.candidates:
+        store.save_email_candidates(
+            conn, company["id"], [c.as_dict() for c in result.candidates]
+        )
+        stats.emails_found += len(result.candidates)
+        stats.companies_with_email += 1
+
+    usable = result.usable()
+    if usable and not company.get("contact_email"):
+        conn.execute(
+            "UPDATE companies SET contact_email = ? WHERE id = ?",
+            (usable.email, company["id"]),
+        )
+        company["contact_email"] = usable.email
+    conn.commit()
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# 第五步：确定收件人 + 起草
 # --------------------------------------------------------------------------- #
 
 def resolve_recipient(
-    analysis: dict[str, Any], company: dict[str, Any], enrichment: dict[str, Any] | None
-) -> str | None:
-    """确定收件人。模型推荐的邮箱必须在已知邮箱里出现过，否则不采信。"""
-    known = {e.lower() for e in (enrichment or {}).get("emails", []) if e}
-    if company.get("contact_email"):
-        known.add(str(company["contact_email"]).lower())
+    analysis: dict[str, Any],
+    company: dict[str, Any],
+    enrichment: dict[str, Any] | None,
+    discovery: DiscoveryResult | None = None,
+) -> tuple[str | None, str | None]:
+    """确定收件人，返回 (邮箱, 提示)。
 
-    recommended = str(analysis.get("recommended_contact") or "").strip().lower()
-    if _EMAIL_RE.match(recommended) and recommended in known:
-        return recommended
+    所有候选都来自真实来源（官网/WHOIS/搜索/Hunter/人名模式），没有一个是模型
+    凭空编的。模型推荐的邮箱只有在候选集里出现过才采信。
+    """
+    if discovery and discovery.candidates:
+        recommended = str(analysis.get("recommended_contact") or "").strip().lower()
+        by_email = {c.email: c for c in discovery.candidates}
+        if _EMAIL_RE.match(recommended) and recommended in by_email:
+            chosen = by_email[recommended]
+        else:
+            chosen = discovery.usable() or discovery.best
+        if chosen:
+            hint = None
+            if chosen.source == "pattern" and chosen.verified not in {"smtp_ok"}:
+                hint = f"⚠️ 收件人为推测邮箱（{chosen.source}/{chosen.verified}），发送前务必核实"
+            elif chosen.confidence < 45:
+                hint = f"⚠️ 收件人可信度偏低（{chosen.confidence}），建议人工确认"
+            return chosen.email, hint
+
     if company.get("contact_email"):
-        return str(company["contact_email"]).lower()
-    return pick_best_email(list(known), company.get("domain")) if known else None
+        return str(company["contact_email"]).lower(), None
+    known = [e for e in (enrichment or {}).get("emails", []) if e]
+    return (pick_best_email(known, company.get("domain")), None) if known else (None, None)
 
 
 def process_company(
@@ -223,6 +295,7 @@ def process_company(
     enrichment: dict[str, Any] | None,
     run_id: int,
     stats: RunStats,
+    discover_fn: DiscoverFn | None = None,
 ) -> None:
     records = store.get_customs_records(conn, company["id"])
     prescore_value = company.get("_prescore")
@@ -256,6 +329,8 @@ def process_company(
             "score": analysis_data["score"],
             "prescore": prescore_value,
             "profile": analysis_data.get("profile"),
+            "assessment": analysis_data.get("assessment"),
+            "contacts": analysis_data.get("contacts_found"),
             "angles": analysis_data.get("angles"),
             "reasons": analysis_data.get("reasons"),
             "risks": analysis_data.get("risks"),
@@ -269,6 +344,11 @@ def process_company(
     store.set_company_status(conn, company["id"], "analyzed")
     conn.commit()
 
+    # 多源邮箱发现：分析拿到真实人名后再跑，好让人名模式派上用场
+    discovery = discover_company_emails(
+        conn, config, company, enrichment, analysis_data, stats, discover_fn
+    )
+
     if priority == "low":
         logger.info("%s 优先级 low，不生成草稿", company["name"])
         return
@@ -278,19 +358,28 @@ def process_company(
     )
     stats.cost_usd += email_usage.cost_usd
 
-    recipient = resolve_recipient(analysis_data, company, enrichment)
+    recipient, recipient_hint = resolve_recipient(
+        analysis_data, company, enrichment, discovery
+    )
     if not recipient:
         stats.skipped_no_contact += 1
 
+    best = discovery.best
+    email_source = (
+        f"{best.source}/{best.verified}（可信度 {best.confidence}）" if best else "—"
+    )
     rationale_parts = [
         f"优先级: {priority}（模型 {analysis_data['score']} / 规则 {prescore_value}）",
         f"理由: {analysis_data.get('reasons') or '—'}",
+        f"收件人来源: {email_source}",
         f"写信思路: {email_data.get('rationale') or '—'}",
         f"引用的事实: {email_data.get('personalization_used') or '—'}",
         f"需人工确认: {email_data.get('review_flags') or '无'}",
     ]
+    if recipient_hint:
+        rationale_parts.append(recipient_hint)
     if not recipient:
-        rationale_parts.append("⚠️ 没有可信的收件邮箱，发送前需人工补上")
+        rationale_parts.append("⚠️ 没有找到任何可信邮箱，发送前需人工补上")
 
     store.save_draft(
         conn,
@@ -322,6 +411,7 @@ def run_night(
     llm: StructuredLLM | None = None,
     crawler: WebsiteCrawler | None = None,
     today: date | None = None,
+    discover_fn: DiscoverFn | None = None,
 ) -> tuple[int, RunStats]:
     """跑完整的一晚。返回 (run_id, 统计)。"""
     run_id = store.start_run(conn)
@@ -353,7 +443,8 @@ def run_night(
             try:
                 enrichment = enrich_company(conn, crawler, company, stats)
                 process_company(
-                    conn, config, llm, company, enrichment, run_id, stats
+                    conn, config, llm, company, enrichment, run_id, stats,
+                    discover_fn=discover_fn,
                 )
             except BudgetExceeded as exc:
                 logger.warning("预算用尽，本轮提前结束：%s", exc)

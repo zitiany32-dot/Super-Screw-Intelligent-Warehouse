@@ -1,6 +1,6 @@
 """配置：全部通过环境变量注入，代码里不放任何密钥。
 
-用法：复制 .env.example 为 .env，填好后 `python -m boltmind.cli` 会自动加载。
+用法：复制 .env.example 为 .env，填好后 `python -m customsradar.cli` 会自动加载。
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ class SellerProfile:
 class Config:
     # --- 存储 ---
     data_dir: Path = DEFAULT_DATA_DIR
-    db_path: Path = DEFAULT_DATA_DIR / "boltmind.db"
+    db_path: Path = DEFAULT_DATA_DIR / "customsradar.db"
 
     # --- AI ---
     anthropic_api_key: str | None = None
@@ -136,9 +136,22 @@ class Config:
     crawl_timeout: int = 15
     crawl_max_pages: int = 5
     crawl_delay_seconds: float = 1.0
-    user_agent: str = "BoltMindBot/0.1 (+contact via website; B2B research)"
+    user_agent: str = "CustomsRadarBot/0.1 (+contact via website; B2B research)"
     respect_robots: bool = True
     high_priority_threshold: int = 70
+
+    # --- 邮箱发现 ---
+    # 免费来源（官网、按人名生成模式）始终开。下面这些要 key 或开关才启用。
+    discover_whois: bool = True          # 系统有 whois 命令就用，没有自动跳过
+    hunter_api_key: str = ""             # Hunter.io，B2B 找邮箱行业标配
+    search_engine: str = ""              # serpapi / bing / brave
+    search_api_key: str = ""
+    discover_timeout: int = 12
+    # 校验：MX 便宜且安全，默认开；SMTP 探测有风险（伤发信信誉），默认关。
+    verify_mx: bool = True
+    verify_smtp: bool = False
+    verify_smtp_min_confidence: int = 40  # 只对够可信的候选做 SMTP 探测
+    verify_smtp_max: int = 20             # 单轮 SMTP 探测次数上限，限速保信誉
 
     # --- 邮件 ---
     smtp_host: str = ""
@@ -160,38 +173,52 @@ class Config:
     @classmethod
     def load(cls, env_file: Path | None = None) -> "Config":
         _load_dotenv(env_file or (REPO_ROOT / ".env"))
-        data_dir = Path(os.environ.get("BOLTMIND_DATA_DIR", str(DEFAULT_DATA_DIR)))
+        data_dir = Path(os.environ.get("RADAR_DATA_DIR", str(DEFAULT_DATA_DIR)))
         defaults = cls()
         return cls(
             data_dir=data_dir,
-            db_path=Path(os.environ.get("BOLTMIND_DB", str(data_dir / "boltmind.db"))),
+            db_path=Path(os.environ.get("RADAR_DB", str(data_dir / "customsradar.db"))),
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
-            model=os.environ.get("BOLTMIND_MODEL", defaults.model),
-            effort=os.environ.get("BOLTMIND_EFFORT", defaults.effort),
-            max_tokens=_env_int("BOLTMIND_MAX_TOKENS", defaults.max_tokens),
+            model=os.environ.get("RADAR_MODEL", defaults.model),
+            effort=os.environ.get("RADAR_EFFORT", defaults.effort),
+            max_tokens=_env_int("RADAR_MAX_TOKENS", defaults.max_tokens),
             nightly_budget_usd=_env_float(
-                "BOLTMIND_NIGHTLY_BUDGET_USD", defaults.nightly_budget_usd
+                "RADAR_NIGHTLY_BUDGET_USD", defaults.nightly_budget_usd
             ),
             price_input_per_mtok=_env_float(
-                "BOLTMIND_PRICE_INPUT", defaults.price_input_per_mtok
+                "RADAR_PRICE_INPUT", defaults.price_input_per_mtok
             ),
             price_output_per_mtok=_env_float(
-                "BOLTMIND_PRICE_OUTPUT", defaults.price_output_per_mtok
+                "RADAR_PRICE_OUTPUT", defaults.price_output_per_mtok
             ),
             max_companies_per_night=_env_int(
-                "BOLTMIND_MAX_COMPANIES", defaults.max_companies_per_night
+                "RADAR_MAX_COMPANIES", defaults.max_companies_per_night
             ),
-            crawl_timeout=_env_int("BOLTMIND_CRAWL_TIMEOUT", defaults.crawl_timeout),
+            crawl_timeout=_env_int("RADAR_CRAWL_TIMEOUT", defaults.crawl_timeout),
             crawl_max_pages=_env_int(
-                "BOLTMIND_CRAWL_MAX_PAGES", defaults.crawl_max_pages
+                "RADAR_CRAWL_MAX_PAGES", defaults.crawl_max_pages
             ),
             crawl_delay_seconds=_env_float(
-                "BOLTMIND_CRAWL_DELAY", defaults.crawl_delay_seconds
+                "RADAR_CRAWL_DELAY", defaults.crawl_delay_seconds
             ),
-            user_agent=os.environ.get("BOLTMIND_USER_AGENT", defaults.user_agent),
-            respect_robots=_env_bool("BOLTMIND_RESPECT_ROBOTS", True),
+            user_agent=os.environ.get("RADAR_USER_AGENT", defaults.user_agent),
+            respect_robots=_env_bool("RADAR_RESPECT_ROBOTS", True),
+            discover_whois=_env_bool("DISCOVER_WHOIS", True),
+            hunter_api_key=os.environ.get("HUNTER_API_KEY", ""),
+            search_engine=os.environ.get("SEARCH_ENGINE", ""),
+            search_api_key=os.environ.get("SEARCH_API_KEY", ""),
+            discover_timeout=_env_int("DISCOVER_TIMEOUT", defaults.discover_timeout),
+            verify_mx=_env_bool("DISCOVER_VERIFY_MX", True),
+            verify_smtp=_env_bool("DISCOVER_VERIFY_SMTP", False),
+            verify_smtp_min_confidence=_env_int(
+                "DISCOVER_VERIFY_SMTP_MIN_CONFIDENCE",
+                defaults.verify_smtp_min_confidence,
+            ),
+            verify_smtp_max=_env_int(
+                "DISCOVER_VERIFY_SMTP_MAX", defaults.verify_smtp_max
+            ),
             high_priority_threshold=_env_int(
-                "BOLTMIND_HIGH_PRIORITY_THRESHOLD", defaults.high_priority_threshold
+                "RADAR_HIGH_PRIORITY_THRESHOLD", defaults.high_priority_threshold
             ),
             smtp_host=os.environ.get("SMTP_HOST", ""),
             smtp_port=_env_int("SMTP_PORT", defaults.smtp_port),
@@ -204,7 +231,7 @@ class Config:
             imap_user=os.environ.get("IMAP_USER", ""),
             imap_password=os.environ.get("IMAP_PASSWORD", ""),
             imap_folder=os.environ.get("IMAP_FOLDER", defaults.imap_folder),
-            allow_send=_env_bool("BOLTMIND_ALLOW_SEND", False),
+            allow_send=_env_bool("RADAR_ALLOW_SEND", False),
             seller=SellerProfile.from_env(),
         )
 

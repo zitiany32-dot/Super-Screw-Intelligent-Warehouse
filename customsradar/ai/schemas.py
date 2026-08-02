@@ -63,6 +63,57 @@ COMPANY_ANALYSIS_SCHEMA: dict[str, Any] = _obj(
                 },
             }
         ),
+        "assessment": _obj(
+            {
+                "strengths": {
+                    "type": "array",
+                    "description": "这家公司的优势/亮点（对我们意味着什么样的机会）。",
+                    "items": {"type": "string"},
+                },
+                "weaknesses": {
+                    "type": "array",
+                    "description": "劣势/短板（采购分散、供应链单一、规模小等，材料能看出的）。",
+                    "items": {"type": "string"},
+                },
+                "opportunities": {
+                    "type": "array",
+                    "description": "对我们的机会点（他们缺什么、痛在哪、我们怎么切）。",
+                    "items": {"type": "string"},
+                },
+                "threats": {
+                    "type": "array",
+                    "description": "风险/威胁（可能有长期供应商、可能是同行、付款风险、政策风险等）。",
+                    "items": {"type": "string"},
+                },
+                "fit_verdict": {
+                    "type": "string",
+                    "description": "一句话总结：这家客户和我们的匹配度到底怎么样，值不值得追。",
+                },
+            }
+        ),
+        "contacts_found": {
+            "type": "array",
+            "description": (
+                "从官网/材料里抓到的**真实**联系人（有名字或职位就填，没有就空数组）。"
+                "绝对不要编造人名。这些名字会用来推测邮箱，编错就发错人。"
+            ),
+            "items": _obj(
+                {
+                    "name": {
+                        "type": "string",
+                        "description": "人名，材料里没有就填空字符串。",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "职位，没有就填空字符串。",
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "如果材料里直接给了这个人的邮箱就填，否则空字符串。不要编。",
+                    },
+                }
+            ),
+        },
         "angles": {
             "type": "array",
             "description": "2-4 个切入点，按有效性排序。",

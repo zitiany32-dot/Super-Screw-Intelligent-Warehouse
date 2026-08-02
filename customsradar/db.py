@@ -64,6 +64,24 @@ CREATE TABLE IF NOT EXISTS enrichment (
     error        TEXT
 );
 
+-- 多源发现的候选邮箱（官网/WHOIS/搜索/Hunter/人名模式）
+CREATE TABLE IF NOT EXISTS email_candidates (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    email        TEXT NOT NULL,
+    source       TEXT,
+    sources      TEXT,          -- JSON list
+    confidence   INTEGER DEFAULT 0,
+    role         TEXT,
+    verified     TEXT,
+    person_name  TEXT,
+    person_title TEXT,
+    note         TEXT,
+    created_at   TEXT NOT NULL,
+    UNIQUE(company_id, email)
+);
+CREATE INDEX IF NOT EXISTS idx_email_candidates_company ON email_candidates(company_id);
+
 -- AI 生成的公司画像 + 切入点分析
 CREATE TABLE IF NOT EXISTS analyses (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,6 +93,8 @@ CREATE TABLE IF NOT EXISTS analyses (
     score        INTEGER,
     prescore     INTEGER,
     profile      TEXT,          -- JSON
+    assessment   TEXT,          -- JSON: 利弊评估 strengths/weaknesses/opportunities/threats
+    contacts     TEXT,          -- JSON: 抓到的真实联系人
     angles       TEXT,          -- JSON
     reasons      TEXT,
     risks        TEXT,

@@ -8,10 +8,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from boltmind.ai.client import Usage  # noqa: E402
-from boltmind.config import Config, SellerProfile  # noqa: E402
-from boltmind.db import init_db  # noqa: E402
-from boltmind.enrich.website import CrawlResult  # noqa: E402
+from customsradar.ai.client import Usage  # noqa: E402
+from customsradar.config import Config, SellerProfile  # noqa: E402
+from customsradar.db import init_db  # noqa: E402
+from customsradar.enrich.website import CrawlResult  # noqa: E402
 
 
 @pytest.fixture()
@@ -23,6 +23,10 @@ def config(tmp_path: Path) -> Config:
         nightly_budget_usd=1.0,
         max_companies_per_night=5,
         crawl_delay_seconds=0.0,
+        # 测试里关掉所有联网的邮箱发现，只留官网+人名模式两个离线来源
+        discover_whois=False,
+        verify_mx=False,
+        verify_smtp=False,
         smtp_host="smtp.example.com",
         smtp_from="sales@example.com",
         allow_send=False,

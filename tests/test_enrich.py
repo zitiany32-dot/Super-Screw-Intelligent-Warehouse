@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from boltmind.enrich.extract import (
+from customsradar.enrich.extract import (
     find_emails,
     find_phones,
     parse_html,
     pick_internal_links,
 )
-from boltmind.enrich.website import _normalize_url, guess_domains, is_blocked_host
+from customsradar.enrich.website import _normalize_url, guess_domains, is_blocked_host
 
 HTML = """
 <html><head>

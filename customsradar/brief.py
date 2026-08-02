@@ -33,6 +33,7 @@ def build_brief(conn: sqlite3.Connection, run_id: int | None = None) -> dict[str
     items = []
     for analysis in analyses:
         draft = drafts_by_analysis.get(analysis["id"])
+        candidates = store.get_email_candidates(conn, analysis["company_id"])
         items.append(
             {
                 "company_id": analysis["company_id"],
@@ -45,7 +46,10 @@ def build_brief(conn: sqlite3.Connection, run_id: int | None = None) -> dict[str
                 "reasons": analysis["reasons"],
                 "risks": analysis["risks"],
                 "profile": analysis["profile"],
+                "assessment": analysis.get("assessment") or {},
+                "contacts": analysis.get("contacts") or [],
                 "angles": analysis["angles"],
+                "emails": candidates,
                 "draft": draft,
             }
         )
@@ -72,7 +76,7 @@ def _fmt_run_window(run: dict[str, Any]) -> str:
 def render_markdown(brief: dict[str, Any]) -> str:
     run = brief["run"]
     if run is None:
-        return "# BoltMind 早报\n\n还没有任何跑批记录。先执行 `python -m boltmind.cli run-night`。"
+        return "# CustomsRadar 早报\n\n还没有任何跑批记录。先执行 `python -m customsradar.cli run-night`。"
 
     stats = run.get("stats") or {}
     items = brief["items"]
@@ -81,7 +85,7 @@ def render_markdown(brief: dict[str, Any]) -> str:
     low = [i for i in items if i["priority"] == "low"]
 
     lines: list[str] = []
-    lines.append("# BoltMind 早报")
+    lines.append("# CustomsRadar 早报")
     lines.append("")
     lines.append(f"跑批 #{run['id']} · {_fmt_run_window(run)} · 状态 `{run['status']}`")
     lines.append("")
@@ -137,7 +141,7 @@ def render_markdown(brief: dict[str, Any]) -> str:
     lines.append("")
     lines.append(
         "所有草稿都停在 `pending` 状态。审核修改后由你手动点发送："
-        "`streamlit run app.py`，或 `python -m boltmind.cli send --draft-id <id>`。"
+        "`streamlit run app.py`，或 `python -m customsradar.cli send --draft-id <id>`。"
     )
     return "\n".join(lines)
 
@@ -166,6 +170,46 @@ def _render_item_md(item: dict[str, Any], detailed: bool = True) -> list[str]:
         role = profile.get("likely_role")
         if role and role != "unknown":
             lines.append(f"　角色：{role} · 采购特征：{profile.get('buying_pattern') or '—'}")
+
+    assessment = item.get("assessment") or {}
+    if any(assessment.get(k) for k in ("strengths", "weaknesses", "opportunities", "threats")):
+        lines.append("")
+        lines.append("**利弊评估**：")
+        for label, key in (
+            ("✅ 优势", "strengths"),
+            ("⚠️ 劣势", "weaknesses"),
+            ("🎯 机会", "opportunities"),
+            ("🚩 风险", "threats"),
+        ):
+            values = assessment.get(key) or []
+            if values:
+                lines.append(f"- {label}：" + "；".join(str(v) for v in values))
+        if assessment.get("fit_verdict"):
+            lines.append(f"- 📌 结论：{assessment['fit_verdict']}")
+
+    emails = item.get("emails") or []
+    if emails:
+        lines.append("")
+        lines.append("**找到的邮箱**（按可信度）：")
+        for cand in emails[:5]:
+            who = (
+                f" — {cand['person_name']}"
+                f"（{cand.get('person_title') or ''}）" if cand.get("person_name") else ""
+            )
+            lines.append(
+                f"- `{cand['email']}` · {cand.get('source')}/{cand.get('verified')}"
+                f" · 可信度 {cand.get('confidence')}{who}"
+            )
+
+    contacts = [c for c in (item.get("contacts") or []) if c.get("name")]
+    if contacts:
+        lines.append("")
+        lines.append(
+            "**抓到的联系人**："
+            + "、".join(
+                f"{c['name']}（{c.get('title') or '—'}）" for c in contacts[:5]
+            )
+        )
 
     angles = item.get("angles") or []
     if angles:
@@ -201,7 +245,7 @@ def _render_item_md(item: dict[str, Any], detailed: bool = True) -> list[str]:
 _HTML_TEMPLATE = """<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BoltMind 早报</title>
+<title>CustomsRadar 早报</title>
 <style>
 :root {{ color-scheme: light dark; }}
 body {{ font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
@@ -235,7 +279,7 @@ def render_html(brief: dict[str, Any]) -> str:
     run = brief["run"]
     if run is None:
         return _HTML_TEMPLATE.format(
-            content="<h1>BoltMind 早报</h1><p>还没有任何跑批记录。</p>"
+            content="<h1>CustomsRadar 早报</h1><p>还没有任何跑批记录。</p>"
         )
 
     stats = run.get("stats") or {}
@@ -244,7 +288,7 @@ def render_html(brief: dict[str, Any]) -> str:
 
     esc = html.escape
     parts = [
-        "<h1>BoltMind 早报</h1>",
+        "<h1>CustomsRadar 早报</h1>",
         f"<p class='meta'>跑批 #{run['id']} · {esc(_fmt_run_window(run))} · "
         f"状态 {esc(str(run['status']))}</p>",
         f"<p class='lede'>昨晚处理了 {stats.get('analyzed', 0)} 家公司，"
@@ -312,6 +356,39 @@ def _render_item_html(item: dict[str, Any], esc) -> str:
 
     if profile.get("business_summary"):
         parts.append(f"<p><b>画像：</b>{esc(str(profile['business_summary']))}</p>")
+
+    assessment = item.get("assessment") or {}
+    if any(assessment.get(k) for k in ("strengths", "weaknesses", "opportunities", "threats")):
+        parts.append("<p><b>利弊评估：</b></p><ul>")
+        for label, key in (
+            ("✅ 优势", "strengths"),
+            ("⚠️ 劣势", "weaknesses"),
+            ("🎯 机会", "opportunities"),
+            ("🚩 风险", "threats"),
+        ):
+            values = assessment.get(key) or []
+            if values:
+                joined = esc("；".join(str(v) for v in values))
+                parts.append(f"<li>{label}：{joined}</li>")
+        parts.append("</ul>")
+        if assessment.get("fit_verdict"):
+            parts.append(f"<p><b>📌 结论：</b>{esc(str(assessment['fit_verdict']))}</p>")
+
+    emails = item.get("emails") or []
+    if emails:
+        parts.append("<p><b>找到的邮箱：</b></p><ul>")
+        for cand in emails[:5]:
+            who = ""
+            if cand.get("person_name"):
+                who = esc(f" — {cand['person_name']}（{cand.get('person_title') or ''}）")
+            parts.append(
+                f"<li><code>{esc(str(cand['email']))}</code> "
+                f"<span class='meta'>{esc(str(cand.get('source')))}/"
+                f"{esc(str(cand.get('verified')))} · 可信度 {cand.get('confidence')}</span>"
+                f"{who}</li>"
+            )
+        parts.append("</ul>")
+
     if angles:
         parts.append("<p><b>切入点：</b></p><ul>")
         for angle in angles:

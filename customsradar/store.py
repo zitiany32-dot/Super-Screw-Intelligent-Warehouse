@@ -234,6 +234,60 @@ def get_enrichment(conn: sqlite3.Connection, company_id: int) -> dict[str, Any] 
 
 
 # --------------------------------------------------------------------------- #
+# email candidates
+# --------------------------------------------------------------------------- #
+
+def save_email_candidates(
+    conn: sqlite3.Connection, company_id: int, candidates: list[dict[str, Any]]
+) -> None:
+    for cand in candidates:
+        conn.execute(
+            """
+            INSERT INTO email_candidates
+                (company_id, email, source, sources, confidence, role, verified,
+                 person_name, person_title, note, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(company_id, email) DO UPDATE SET
+                source=excluded.source, sources=excluded.sources,
+                confidence=excluded.confidence, role=excluded.role,
+                verified=excluded.verified, person_name=excluded.person_name,
+                person_title=excluded.person_title, note=excluded.note
+            """,
+            (
+                company_id,
+                cand["email"],
+                cand.get("source"),
+                dumps(cand.get("sources") or []),
+                cand.get("confidence", 0),
+                cand.get("role"),
+                cand.get("verified"),
+                cand.get("person_name"),
+                cand.get("person_title"),
+                cand.get("note"),
+                utcnow(),
+            ),
+        )
+
+
+def get_email_candidates(
+    conn: sqlite3.Connection, company_id: int
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT * FROM email_candidates WHERE company_id = ?
+        ORDER BY confidence DESC, id ASC
+        """,
+        (company_id,),
+    ).fetchall()
+    result = []
+    for row in rows:
+        data = dict(row)
+        data["sources"] = loads(data.get("sources"), [])
+        result.append(data)
+    return result
+
+
+# --------------------------------------------------------------------------- #
 # analyses
 # --------------------------------------------------------------------------- #
 
@@ -244,8 +298,9 @@ def save_analysis(
         """
         INSERT INTO analyses
             (company_id, run_id, created_at, model, priority, score, prescore,
-             profile, angles, reasons, risks, input_tokens, output_tokens, cost_usd)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             profile, assessment, contacts, angles, reasons, risks,
+             input_tokens, output_tokens, cost_usd)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             company_id,
@@ -256,6 +311,8 @@ def save_analysis(
             analysis.get("score"),
             analysis.get("prescore"),
             dumps(analysis.get("profile") or {}),
+            dumps(analysis.get("assessment") or {}),
+            dumps(analysis.get("contacts") or []),
             dumps(analysis.get("angles") or []),
             analysis.get("reasons"),
             analysis.get("risks"),
@@ -289,6 +346,8 @@ def _hydrate_analysis(row: sqlite3.Row | None) -> dict[str, Any] | None:
         return None
     data = dict(row)
     data["profile"] = loads(data.get("profile"), {})
+    data["assessment"] = loads(data.get("assessment"), {})
+    data["contacts"] = loads(data.get("contacts"), [])
     data["angles"] = loads(data.get("angles"), [])
     return data
 

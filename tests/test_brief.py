@@ -4,9 +4,9 @@ from datetime import date
 
 from conftest import FakeCrawler
 
-from boltmind import brief as brief_mod
-from boltmind.pipeline import run_night
-from boltmind.sources.demo import DemoCustomsSource
+from customsradar import brief as brief_mod
+from customsradar.pipeline import run_night
+from customsradar.sources.demo import DemoCustomsSource
 
 TODAY = date(2026, 8, 1)
 
@@ -51,7 +51,7 @@ def test_write_brief_creates_both_files(conn, config, fake_llm, tmp_path):
     run_id = _run(conn, config, fake_llm, limit=1)
     md_path, html_path, text = brief_mod.write_brief(conn, tmp_path / "briefs", run_id)
     assert md_path.exists() and html_path.exists()
-    assert text.startswith("# BoltMind 早报")
+    assert text.startswith("# CustomsRadar 早报")
     assert "<html" in html_path.read_text(encoding="utf-8").lower()
 
 
@@ -65,7 +65,7 @@ def test_brief_without_any_run(conn):
 def test_brief_flags_missing_recipients(conn, config, fake_analysis, fake_email):
     from conftest import FakeLLM
 
-    from boltmind.enrich.website import CrawlResult
+    from customsradar.enrich.website import CrawlResult
 
     llm = FakeLLM(
         {

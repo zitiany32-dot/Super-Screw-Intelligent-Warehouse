@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from boltmind import mailer, store
+from customsradar import mailer, store
 
 
 class FakeSMTP:

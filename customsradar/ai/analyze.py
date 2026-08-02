@@ -46,7 +46,23 @@ def _clean_analysis(data: dict[str, Any], prescore_value: int) -> dict[str, Any]
         data["angles"] = []
     if not isinstance(data.get("profile"), dict):
         data["profile"] = {}
+    if not isinstance(data.get("assessment"), dict):
+        data["assessment"] = {}
+    if not isinstance(data.get("contacts_found"), list):
+        data["contacts_found"] = []
     return data
+
+
+def real_people(analysis: dict[str, Any]) -> list[dict[str, Any]]:
+    """从分析结果里取出有名字的真实联系人，供邮箱模式生成用。"""
+    people = []
+    for contact in analysis.get("contacts_found") or []:
+        name = str(contact.get("name") or "").strip()
+        if name and name.lower() not in {"unknown", "n/a", "none", "-"}:
+            people.append(
+                {"name": name, "title": (contact.get("title") or "").strip() or None}
+            )
+    return people
 
 
 def draft_cold_email(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from boltmind.scoring import prescore, priority_from_score
+from customsradar.scoring import prescore, priority_from_score
 
 TODAY = date(2026, 8, 1)
 
