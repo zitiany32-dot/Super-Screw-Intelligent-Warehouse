@@ -91,7 +91,10 @@ class SellerProfile:
             lead_time=os.environ.get("SELLER_LEAD_TIME", defaults.lead_time),
             sender_name=os.environ.get("SELLER_SENDER_NAME", defaults.sender_name),
             sender_title=os.environ.get("SELLER_SENDER_TITLE", defaults.sender_title),
-            sender_email=os.environ.get("SMTP_FROM", defaults.sender_email),
+            # 独立于 SMTP：只导出 .eml 手动发时也需要一个真实发件邮箱
+            sender_email=os.environ.get(
+                "SELLER_SENDER_EMAIL", os.environ.get("SMTP_FROM", defaults.sender_email)
+            ),
             sender_phone=os.environ.get("SELLER_SENDER_PHONE", defaults.sender_phone),
         )
 

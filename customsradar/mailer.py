@@ -111,8 +111,8 @@ def preflight(config: Config, draft: dict[str, Any]) -> list[str]:
         problems.append("RADAR_ALLOW_SEND 未打开")
     if not config.smtp_host:
         problems.append("没有配置 SMTP_HOST")
-    if not config.smtp_from:
-        problems.append("没有配置 SMTP_FROM")
+    if not sender_address(config):
+        problems.append("没有配置发件邮箱（SELLER_SENDER_EMAIL 或 SMTP_FROM）")
     return problems
 
 
@@ -120,18 +120,47 @@ def preflight(config: Config, draft: dict[str, Any]) -> list[str]:
 # 组装 & 发送
 # --------------------------------------------------------------------------- #
 
+def sender_address(config: Config) -> str:
+    """发件邮箱：优先 SELLER_SENDER_EMAIL，其次 SMTP_FROM。都没有就返回空串。
+
+    分开两个来源是为了「不配 SMTP、只导出 .eml 手动发」这条路 —— 那种用法下
+    根本没有 SMTP_FROM，但签名和 From 仍然需要一个真实邮箱。
+    """
+    return (config.seller.sender_email or config.smtp_from or "").strip()
+
+
 def build_message(
-    config: Config, draft: dict[str, Any], message_id: str | None = None
+    config: Config,
+    draft: dict[str, Any],
+    message_id: str | None = None,
+    for_export: bool = False,
 ) -> EmailMessage:
+    """组装邮件。
+
+    for_export=True 用于导出 .eml 手动发送：
+      * 不知道发件邮箱时**不写 From**，让邮件客户端自动填你的默认账号
+        （写成 `名字 <>` 是非法地址，Outlook/Foxmail 会报错或判垃圾）
+      * 不预置 Message-ID —— 客户端发送时会自己生成，预置的反而会被替换掉，
+        还可能带上 @localhost 这种一看就是机器发的域名
+    """
     msg = EmailMessage()
+    address = sender_address(config)
     sender_name = config.seller.sender_name or config.seller.company_name
-    msg["From"] = formataddr((sender_name, config.smtp_from))
-    msg["To"] = draft["to_email"]
+
+    if address:
+        msg["From"] = formataddr((sender_name, address))
+    elif not for_export:
+        # 真发信没有发件地址是配置错误，preflight 会先拦下，这里兜底
+        raise SendBlocked("没有配置发件邮箱（SELLER_SENDER_EMAIL 或 SMTP_FROM）")
+
+    msg["To"] = draft["to_email"] or ""
     msg["Subject"] = draft["subject"]
     msg["Date"] = formatdate(localtime=True)
-    msg["Message-ID"] = message_id or make_msgid(
-        domain=config.smtp_from.split("@")[-1] if "@" in config.smtp_from else None
-    )
+
+    if not for_export:
+        msg["Message-ID"] = message_id or make_msgid(
+            domain=address.split("@")[-1] if "@" in address else None
+        )
     if draft.get("in_reply_to"):
         msg["In-Reply-To"] = draft["in_reply_to"]
         msg["References"] = draft["in_reply_to"]
@@ -151,7 +180,7 @@ def _signature(config: Config) -> str:
         seller.company_name,
         seller.website,
         seller.sender_phone,
-        config.smtp_from,
+        sender_address(config),
     ) if line]
     return "\n".join(lines) if len(lines) > 1 else ""
 
@@ -232,9 +261,13 @@ def _deliver(config: Config, message: EmailMessage, smtp_factory: Any | None) ->
 
 
 def export_eml(config: Config, draft: dict[str, Any], out_dir: Path) -> Path:
-    """导出成 .eml，可以直接拖进 Outlook/Foxmail 手动发 —— 不想配 SMTP 时用这个。"""
+    """导出成 .eml，可以直接拖进 Outlook/Foxmail 手动发 —— 不想配 SMTP 时用这个。
+
+    注意：手动发出去的信，Message-ID 由你的邮件客户端生成，跟数据库里对不上，
+    所以 inbox 收回复时走的是「按发件邮箱/域名匹配公司」这条兜底路径。
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
-    message = build_message(config, draft)
+    message = build_message(config, draft, for_export=True)
     path = out_dir / f"draft-{draft['id']}.eml"
     path.write_bytes(bytes(message))
     return path

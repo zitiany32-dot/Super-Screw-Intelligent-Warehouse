@@ -60,6 +60,14 @@ streamlit run app.py        # 或者直接看 data/briefs/*.html
 
 改完点「保存并通过审核」，再点「确认发送」。或者点「导出 .eml」拖进 Outlook 手动发 —— 前两周建议走这条路，`RADAR_ALLOW_SEND` 保持 `false`，先确认草稿质量。
 
+### 只想手动发？不用配 SMTP
+
+完全不配 SMTP 也能用：草稿导出成 `.eml`，双击用 Outlook/Foxmail 打开，改完直接发。这样连发信域名都不用先准备，适合刚开始验证草稿质量的阶段。
+
+填一下 `SELLER_SENDER_EMAIL`（你日常那个工作邮箱）签名和 From 才完整；不填也能导，只是 `.eml` 里不带 From，靠邮件客户端补你的默认账号。
+
+⚠️ 手动发出去的信，Message-ID 由你的邮件客户端生成、跟数据库里对不上，所以 `poll-replies` 收回复时走的是「按发件邮箱/域名匹配公司」这条兜底路径 —— 一样能认出是谁回的，只是不如 Message-ID 精确。
+
 ### 客户回复后
 
 ```bash
