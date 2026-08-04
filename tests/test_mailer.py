@@ -192,6 +192,52 @@ def test_export_eml_writes_a_file(conn, config, draft_id, tmp_path):
     assert "Hex bolts" in content
 
 
+def test_export_eml_without_any_smtp_config(conn, config, draft_id, tmp_path):
+    """完全没配 SMTP 时导出的 .eml 必须是合法邮件 —— 这是「手动发」那条路。
+
+    以前会写出 `From: 名字 <>` 这种非法地址 + @localhost 的 Message-ID，
+    Outlook/Foxmail 打开会报错或直接判垃圾。
+    """
+    config.smtp_host = ""
+    config.smtp_from = ""
+    config.seller.sender_email = ""
+
+    draft = store.get_draft(conn, draft_id)
+    content = mailer.export_eml(config, draft, tmp_path / "eml").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    # 不知道发件人时干脆不写 From，交给邮件客户端填默认账号
+    assert "From:" not in content
+    assert "<>" not in content
+    # 不预置 Message-ID：客户端发送时会自己生成，预置的只会泄露 localhost
+    assert "localhost" not in content
+    assert "buyer@acme.example.com" in content
+
+
+def test_export_eml_uses_seller_sender_email_without_smtp(conn, config, draft_id, tmp_path):
+    """只填 SELLER_SENDER_EMAIL、不配 SMTP，也应该有正确的 From 和签名。"""
+    config.smtp_host = ""
+    config.smtp_from = ""
+    config.seller.sender_email = "li@yongnian.example.com"
+
+    draft = store.get_draft(conn, draft_id)
+    content = mailer.export_eml(config, draft, tmp_path / "eml").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    assert "li@yongnian.example.com" in content
+    assert "<>" not in content
+
+
+def test_send_still_blocked_without_sender_address(conn, config, draft_id):
+    config.allow_send = True
+    config.smtp_from = ""
+    config.seller.sender_email = ""
+    mailer.approve_draft(conn, draft_id)
+    with pytest.raises(mailer.SendBlocked, match="发件邮箱"):
+        mailer.send_draft(conn, config, draft_id, confirm=True, smtp_factory=FakeSMTP)
+    assert FakeSMTP.sent == []
+
+
 def test_signature_is_appended(conn, config, draft_id):
     config.allow_send = True
     mailer.approve_draft(conn, draft_id)

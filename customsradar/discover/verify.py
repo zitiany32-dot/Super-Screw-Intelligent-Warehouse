@@ -34,6 +34,19 @@ class MXResult:
     note: str | None = None
 
 
+def classify_mx(pairs: list[tuple[int, str]], method: str = "dnspython") -> MXResult:
+    """把 (优先级, MX主机) 列表判成结果。处理 RFC 7505 null MX。"""
+    real_hosts = [host for _, host in sorted(pairs) if host]
+    if not pairs:
+        return MXResult(ok=False, method=method, note="无 MX 记录")
+    if not real_hosts:
+        # 唯一的 MX 是 "."（rstrip 后为空）→ 域名明确声明不收信，别投递
+        return MXResult(
+            ok=False, method=method, note="null MX（RFC 7505），该域名不收信"
+        )
+    return MXResult(ok=True, host=real_hosts[0], method=method)
+
+
 def resolve_mx(domain: str, timeout: int = 8) -> MXResult:
     """查域名的 MX 记录。降级链：dnspython → dig/nslookup → A 记录解析。"""
     domain = (domain or "").strip().lower().lstrip("www.")
@@ -47,12 +60,8 @@ def resolve_mx(domain: str, timeout: int = 8) -> MXResult:
         resolver = dns.resolver.Resolver()
         resolver.lifetime = timeout
         answers = resolver.resolve(domain, "MX")
-        hosts = sorted(
-            ((r.preference, str(r.exchange).rstrip(".")) for r in answers),
-            key=lambda x: x[0],
-        )
-        if hosts:
-            return MXResult(ok=True, host=hosts[0][1], method="dnspython")
+        pairs = [(r.preference, str(r.exchange).rstrip(".")) for r in answers]
+        return classify_mx(pairs, method="dnspython")
     except ImportError:
         pass
     except Exception as exc:  # noqa: BLE001 — 无 MX 记录 / 查询失败

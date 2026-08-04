@@ -4,9 +4,11 @@ requests>=2.31.0        # 官网抓取 + 搜索/Hunter API
 streamlit>=1.30.0       # 审核后台 app.py
 openpyxl>=3.1.0         # 读 .xlsx 格式的海关数据导出（只读 CSV 的话可以不装）
 
-# 邮箱发现的可选增强（不装也能跑，只是少几个来源/校验精度低一点）
-dnspython>=2.4.0        # 精确查 MX 记录（没有就退回 dig/nslookup 或域名解析）
-python-whois>=0.9.0     # WHOIS 查询（没有就用系统 whois 命令，再没有就跳过）
+# 邮箱发现的增强
+# ⚠️ dnspython 强烈建议装：不装、且系统又没有 dig/nslookup 时，MX 校验会静默降级成
+#    「仅确认域名能解析」，既查不到真实 MX、也识别不了 null MX（声明不收信的域名）。
+dnspython>=2.4.0        # 精确查 MX 记录（没有就退回 dig/nslookup，再没有就只做域名解析）
+python-whois>=0.9.0     # WHOIS 查询（可选；没有就用系统 whois 命令，再没有就跳过）
 
 # 开发用
 pytest>=7.4.0
